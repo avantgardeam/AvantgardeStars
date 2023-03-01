@@ -1,0 +1,167 @@
+---
+title: "Estrelas Avantgarde"
+date: "`r Sys.Date()`"
+theme: flatly
+format:
+  html:
+    code-tools:
+      source: true
+      toggle: false
+      caption: none
+---
+
+<style>
+body {
+text-align: justify}
+</style>
+
+```{r, include=FALSE}
+library(Rblpapi)
+library(tidyverse)
+library(DT)
+library(docstring)
+
+source('functions.R')
+
+blpConnect()
+```
+
+```{r, include=FALSE}
+# Investable universe (members of the IBX Index or SMLL index)
+ibx_composition <- bds('IBX Index', 'INDX_MWEIGHT')
+smll_composition <- bds('SMLLBV Index', 'INDX_MWEIGHT')
+
+securities <- unique(c(
+  ibx_composition$`Member Ticker and Exchange Code`, smll_composition$`Member Ticker and Exchange Code`
+))
+
+securities <- paste(word(securities, 1), 'BZ Equity')
+
+## If we have more than one ticker for the same company (PETR3 and PETR3, e.g.),
+### select the one that Bloomberg considers as the Fundamental Ticker.
+securities <- bdp(securities, c('EQY_FUND_TICKER', 'AVG_DAILY_VALUE_TRADED_3M')) %>% 
+  rownames_to_column('Ticker') %>% 
+  mutate(EQY_FUND_TICKER = paste(EQY_FUND_TICKER, 'Equity')) %>% 
+  distinct(EQY_FUND_TICKER) %>% 
+  pull(EQY_FUND_TICKER)
+```
+
+```{r, include=FALSE}
+rm(ibx_composition, smll_composition)
+```
+
+```{r, include=FALSE}
+# Fetch, from Bloomberg, the metrics that we will consider
+fields <- c(
+  'PX_LAST', # PRICE
+  'TRAIL_12M_EPS_BEF_XO_ITEM', 'BOOK_VAL_PER_SH', # VALUE
+  'CUR_MKT_CAP', # SIZE
+  'CURRENT_TRR_1MO', 'CURRENT_TRR_1YR', # MOMENTUM
+  'EQY_BETA', 'VOLATILITY_260D' # LOW VOL
+)
+
+metrics <- bdp(securities, fields)
+```
+```{r, include=FALSE}
+rm(fields)
+```
+
+```{r, include=FALSE}
+# Clean data
+clean_metrics <- metrics %>% 
+  rownames_to_column('Ticker') %>%
+  mutate(
+    EARNINGS_TO_PRICE = TRAIL_12M_EPS_BEF_XO_ITEM / PX_LAST,
+    BOOK_TO_MARKET = BOOK_VAL_PER_SH / PX_LAST,
+    MOMENTUM = CURRENT_TRR_1YR - CURRENT_TRR_1MO # Total Return 12-1 months
+  ) %>% 
+  mutate_at(
+    vars(VOLATILITY_260D, EQY_BETA, CUR_MKT_CAP),
+    ~ .x * -1 # Buy low, sell high to buy high, sell low
+  ) %>% 
+  # Normalize data
+  mutate(across(
+    !Ticker, ~(.x - mean(.x, na.rm = TRUE)) / sd(.x, na.rm = TRUE)
+  )) %>%
+  # Replace missing values with zero (mean)
+  mutate(across(
+    !Ticker, ~replace_na(.x, 0)
+  )) %>%
+  rowwise() %>% 
+  mutate(
+    # Summarize multiple factor metrics into one
+    LOW_VOLATILITY = mean(c(VOLATILITY_260D, EQY_BETA)),
+    VALUE = mean(c(EARNINGS_TO_PRICE, BOOK_TO_MARKET))
+  ) %>% 
+  rename(SIZE = CUR_MKT_CAP) %>% 
+  dplyr::select(
+    'Ticker', 'VALUE', 'SIZE', 'MOMENTUM', 'LOW_VOLATILITY'
+  ) %>% 
+  ungroup()
+```
+
+```{r, include=FALSE}
+stars <- clean_metrics %>% 
+  # Stars for each asset and factor
+  mutate(across(
+    !Ticker, ~as.numeric(get_number_of_stars(.x))
+  )) %>% 
+  # Overall star rating
+  rowwise() %>% 
+  mutate(
+    ALL_FACTORS = mean(c_across(!Ticker))
+  ) %>% 
+  ungroup() %>% 
+  mutate(
+    ALL_FACTORS = as.numeric(get_number_of_stars(ALL_FACTORS))
+  ) %>% 
+  # Star emoji
+  mutate(across(
+    !Ticker, ~strrep('\xE2\xAD\x90', .x)
+  )) %>% 
+  mutate(bdp(Ticker, 'SHORT_COMPANY_NAME'), .after = 1) %>% 
+  column_to_rownames('SHORT_COMPANY_NAME') %>% 
+  dplyr::select(!Ticker) %>% 
+  rename(
+    VALOR = VALUE,
+    TAMANHO = SIZE,
+    MOMENTO = MOMENTUM,
+    `BAIXA VOL.` = LOW_VOLATILITY,
+    `TODOS FATORES` = ALL_FACTORS
+  )
+```
+
+```{r, echo=FALSE}
+datatable(
+  stars, rownames = TRUE, extensions = "Buttons", options = list(
+  dom = 'Blfrtip', scrollX=TRUE,
+  buttons = list(list(
+    extend = 'excel', filename = paste0('EstrelasAvantgarde', '_', str_replace_all(Sys.Date(), '-', ''))
+  ))
+))
+```
+
+# Metodologia
+
+A metodologia base do estudo pode ser acessada na Carta da Gestão de Fevereiro de 2023, disponível para consulta em nosso [site](https://www.avantgardeam.com.br/cartas-da-gestao/).
+
+# Contato
+
+Caso você tenha alguma dúvida ou sugestão de melhoria, não hesite em entrar em contato conosco. Estamos comprometidos em aprimorar continuamente o conteúdo do nosso trabalho e valorizamos o seu feedback e comentários construtivos. Por favor, envie um e-mail para [pteles@avantgardeam.com.br](mailto:pteles@avantgardeam.com.br) ou [contato@avantgardeam.com.br](mailto:contato@avantgardeam.com.br) e teremos o prazer de ajudá-lo.
+
+# Disclaimer
+
+- Os materiais apresentados não são considerados relatórios de análise, de acordo com a definição da Instrução nº 598/2018 da Comissão de Valores Mobiliários (CVM), nem oferecem aconselhamento de investimentos em valores mobiliários, conforme a definição da Instrução CVM nº 592/2017.
+
+- As opiniões apresentadas nos nossos materiais estão sujeitas a alterações sem aviso prévio e não devem ser consideradas como uma oferta de compra ou venda de títulos, valores mobiliários ou instrumentos financeiros. Portanto, a Avantgarde Asset Management não assume nenhuma responsabilidade por eventuais perdas decorrentes de decisões tomadas por investidores com base no conteúdo desses materiais.
+
+- Os materiais apresentados têm um caráter exclusivamente informativo, não devendo ser considerados como recomendações de investimento, relatórios de acompanhamento, análises ou estudos sobre valores mobiliários e seus emissores que possam influenciar ou auxiliar investidores no processo de tomada de decisão de investimento.
+
+- Os investimentos em fundos não são garantidos pelo administrador, pelo gestor, por qualquer mecanismo de seguro ou pelo Fundo Garantidor de Crédito - FGC. É importante destacar que nossos materiais não devem ser considerados como a única fonte de informação para tomada de decisão de investimento. Além disso, recomendamos que os investidores leiam atentamente o Regulamento, o Formulário de Informações Complementares e a Lâmina de Informações Essenciais, se houver, antes de realizar o investimento, dentre outras fontes de informação.
+
+- Aplicações em títulos e valores mobiliários possuem riscos associados, que podem resultar na perda total ou parcial do capital investido, ou ainda requerer investimentos adicionais de recursos, conforme a situação.
+
+- A Avantgarde Asset Management não se responsabiliza por quaisquer perdas diretas, indiretas ou lucros cessantes resultantes da utilização dos nossos materiais para qualquer finalidade.
+
+- Este material está disponível para uso e redistribuição com fins não comerciais, desde que a atribuição adequada de autoria seja feita. É importante destacar que o nome da Avantgarde Asset Management e de seus colaboradores não pode ser utilizado para endossar ou promover qualquer produto relacionado a este material. Em caso de dúvidas sobre o uso adequado deste material, por favor entre em contato conosco.
+
