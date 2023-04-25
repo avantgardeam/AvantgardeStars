@@ -4,6 +4,7 @@ date: "`r Sys.Date()`"
 theme: flatly
 format:
   html:
+    self-contained: true
     code-tools:
       source: true
       toggle: false
