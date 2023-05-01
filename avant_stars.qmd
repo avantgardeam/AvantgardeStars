@@ -63,6 +63,7 @@ fields <- c(
 
 metrics <- bdp(securities, fields)
 ```
+
 ```{r, include=FALSE}
 rm(fields)
 ```
@@ -72,8 +73,8 @@ rm(fields)
 clean_metrics <- metrics %>% 
   rownames_to_column('Ticker') %>%
   mutate(
-    EARNINGS_TO_PRICE = TRAIL_12M_EPS_BEF_XO_ITEM / PX_LAST,
-    BOOK_TO_MARKET = BOOK_VAL_PER_SH / PX_LAST,
+    EARNINGS_TO_PRICE = ifelse(TRAIL_12M_EPS_BEF_XO_ITEM > 0, TRAIL_12M_EPS_BEF_XO_ITEM / PX_LAST, 0),
+    BOOK_TO_MARKET = ifelse(BOOK_VAL_PER_SH > 0, BOOK_VAL_PER_SH / PX_LAST, 0),
     MOMENTUM = CURRENT_TRR_1YR - CURRENT_TRR_1MO # Total Return 12-1 months
   ) %>% 
   mutate_at(
@@ -145,6 +146,10 @@ datatable(
 # Metodologia
 
 A metodologia base do estudo pode ser acessada na Carta da Gestão de Fevereiro de 2023, disponível para consulta em nosso [site](https://www.avantgardeam.com.br/cartas-da-gestao/).
+
+## Modificações na Metodologia
+
+- [**Abril de 2023**] Para determinar o fator de valor, são considerados dois indicadores: "*earnings to price*" e "*book to market*". No entanto, esses indicadores são problemáticos quando o numerador é negativo. Isso ocorre porque, se o preço diminuir, o indicador se tornará mais negativo. Esse fenômeno vai em desacordo com a essência do fator valor, que considera uma queda no preço como um evento que torna o ativo mais atrativo, e não menos. Por esse motivo, truncamos o valor desses indicadores em zero.
 
 # Contato
 
