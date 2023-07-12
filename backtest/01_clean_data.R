@@ -4,8 +4,6 @@ library(lubridate)
 library(purrr)
 library(arrow) # .parquet
 
-source('99_functions.R')
-
 blpConnect()
 
 # Dates
@@ -47,10 +45,6 @@ indexes_composition <- bind_rows(indexes_composition) %>%
     ticker = paste(ticker, 'Equity')
   )
 
-write_parquet(indexes_composition, paste0('clean_data/', 'ibx_smll_composition.parquet'))
-
-indexes_composition <- read_parquet(paste0('clean_data/', 'ibx_smll_composition.parquet'))
-
 # Get Investable Universe
 fundamental_ticker <- bdp(unique(indexes_composition$ticker), 'EQY_FUND_TICKER') %>% 
   rownames_to_column('ticker') %>% 
@@ -59,36 +53,55 @@ fundamental_ticker <- bdp(unique(indexes_composition$ticker), 'EQY_FUND_TICKER')
     fundamental_ticker = paste(fundamental_ticker, 'Equity')
   ) 
 
+indexes_composition <- left_join(indexes_composition, fundamental_ticker, by = 'ticker')
+
+write_parquet(indexes_composition, paste0('clean_data/', 'ibx_smll_composition.parquet'))
+
 # Fetch, from Bloomberg, the metrics that we will consider
+investable_universe <- read_parquet(paste0('clean_data/', 'ibx_smll_composition.parquet')) %>% 
+  distinct(
+    date, fundamental_ticker, .keep_all = TRUE
+  ) %>% 
+  dplyr::select(
+    c(index, date, fundamental_ticker, weight)
+  ) %>% 
+  rename(
+    ticker = fundamental_ticker
+  ) 
+
 fields <- c(
-  'TRAIL_12M_EPS_BEF_XO_ITEM', 'BOOK_VAL_PER_SH', # VALUE
-  'CUR_MKT_CAP', # SIZE
-  'CURRENT_TRR_1MO', 'CURRENT_TRR_1YR', # MOMENTUM
-  'EQY_BETA', 'VOLATILITY_260D' # LOW VOL
+  'PX_TO_BOOK_RATIO', 'PE_RATIO', # VALUE
+  'CUR_MKT_CAP' # SIZE
 )
 
-investable_universe <- indexes_composition %>% 
-  left_join(
-    fundamental_ticker, by = 'ticker'
-  ) %>% 
-  distinct(date, fundamental_ticker) %>% 
-  rename(ticker = fundamental_ticker) 
-
-opt <- c("periodicitySelection"="MONTHLY")
+opt <- structure(
+  c("MONTHLY", "ACTUAL", "PREVIOUS_VALUE", "ACTIVE_DAYS_ONLY"),
+  names = c("periodicitySelection", "periodicityAdjustment", "nonTradingDayFillMethod", "nonTradingDayFillOption")
+)
 metrics <- bdh(
   unique(investable_universe$ticker), 
   fields = fields, options = opt,
   start.date = '20061231', end.date = '20230331'
-) %>% 
+)
+
+clean_metrics <- metrics %>% 
   bind_rows(.id = 'ticker') %>% 
+  arrange(date, ticker) %>% 
   pivot_longer(
     !c(date, ticker), names_to = 'metric', values_to = 'value'
   ) %>% 
-  drop_na(value) %>% 
-  arrange(date, ticker) %>% 
-  pivot_wider(
-    names_from = 'metric', values_from = 'value'
-  )
+  drop_na(value)
 
-write_parquet(metrics, paste0('clean_data/', 'metrics.parquet'))
+write_parquet(clean_metrics, paste0('clean_data/', 'metrics.parquet'))
+
+# Indexes
+indexes_prices <- bdh(
+  c(indexes, 'BZACCETP Index'), 
+  fields = 'PX_LAST', start.date = '20061231', 
+  end.date = '20230331'
+) %>% 
+  bind_rows(.id = 'ticker')
+
+write_parquet(indexes_prices, paste0('clean_data/', 'indexes_prices.parquet'))
+
 

@@ -145,7 +145,7 @@ datatable(
 
 # Metodologia
 
-A metodologia base do estudo pode ser acessada na Carta da Gestão de Fevereiro de 2023, disponível para consulta em nosso [site](https://www.avantgardeam.com.br/cartas-da-gestao/).
+Para obter informações detalhadas sobre a metodologia utilizada neste estudo, recomendamos consultar a Carta da Gestão de Fevereiro de 2023. Adicionalmente, você pode encontrar o backtest da estratégia na Carta da Gestão de Abril de 2023. Ambos os documentos estão disponíveis em nosso [site](https://www.avantgardeam.com.br/cartas-da-gestao/) para consulta.
 
 ## Modificações na Metodologia
 
@@ -153,7 +153,7 @@ A metodologia base do estudo pode ser acessada na Carta da Gestão de Fevereiro 
 
 # Contato
 
-Caso você tenha alguma dúvida ou sugestão de melhoria, não hesite em entrar em contato conosco. Estamos comprometidos em aprimorar continuamente o conteúdo do nosso trabalho e valorizamos o seu feedback e comentários construtivos. Por favor, envie um e-mail para [pteles@avantgardeam.com.br](mailto:pteles@avantgardeam.com.br) ou [contato@avantgardeam.com.br](mailto:contato@avantgardeam.com.br) e teremos o prazer de ajudá-lo.
+Se você tiver alguma dúvida ou sugestão de melhoria, estamos à disposição para ajudar. Valorizamos muito o seu feedback e comentários construtivos, pois estamos empenhados em aprimorar constantemente nosso trabalho. Não hesite em entrar em contato conosco enviando um e-mail para [pteles@avantgardeam.com.br](mailto:pteles@avantgardeam.com.br) ou [contato@avantgardeam.com.br](mailto:contato@avantgardeam.com.br). Teremos o prazer de atendê-lo e auxiliá-lo da melhor forma possível.
 
 # Disclaimer
 
