@@ -21,6 +21,7 @@ library(Rblpapi)
 library(tidyverse)
 library(DT)
 library(docstring)
+library(paws)
 
 source('functions.R')
 
@@ -28,19 +29,52 @@ blpConnect()
 ```
 
 ```{r, include=FALSE}
-# Investable universe (members of the IBX Index or SMLL index)
-ibx_composition <- bds('IBX Index', 'INDX_MWEIGHT')
-smll_composition <- bds('SMLLBV Index', 'INDX_MWEIGHT')
+# This function was previously 'hidden' in the "functions.R" file. To increase transparency, we make it available here.
+get_number_of_stars <- function(factor_metric){
+  #' Assign Stars.
+  #' @description This function assigns a star rating (ranging from 1 to 5) 
+  #' to each asset based on how well it ranks in comparison to 
+  #' other assets with respect to a given factor. 
+  #' 
+  #' The higher the 
+  #' asset's rank, the higher the star rating it will receive. 
+  #' Specifically, the top 10% of assets will receive a 5-star 
+  #' rating, the next 20% (i.e., assets ranked between 10% and 30%) 
+  #' will receive a 4-star rating, the next 40% 
+  #' (i.e., assets ranked between 30% and 70%) will receive a 3-star 
+  #' rating, the next 20% (i.e., assets ranked between 70% and 90%) 
+  #' will receive a 2-star rating, and the bottom 10% of assets will 
+  #' receive a 1-star rating. 
+  #' @param factor_metric numeric vector. Vector containing the values for a factor metric (PE RATIO, e.g.).
+  #' @returns Categorical vector indicating the star rating of each asset.
+  
+  ranked_factor_metric <- rank(factor_metric)
+  
+  len <- length(ranked_factor_metric)
+  
+  # Defines breaks for each star level based on the length of the ranked vector
+  breaks <- round(c(
+    1, len * 0.1, len * 0.3, len * 0.7, len * 0.9, len
+  ))
+  
+  # Break points are used to determine which star level each asset will receive 
+  number_of_stars <- cut(
+    ranked_factor_metric, breaks = breaks, include.lowest = TRUE, labels = 1:5
+  )
+  
+  return(number_of_stars)
+}
+```
 
-securities <- unique(c(
-  ibx_composition$`Member Ticker and Exchange Code`, smll_composition$`Member Ticker and Exchange Code`
-))
+```{r, include=FALSE}
+# Investable universe (members of the IBRA Index)
+securities <- bds('IBRA Index', 'INDX_MWEIGHT')$`Member Ticker and Exchange Code`
 
 securities <- paste(word(securities, 1), 'BZ Equity')
 
 ## If we have more than one ticker for the same company (PETR3 and PETR3, e.g.),
 ### select the one that Bloomberg considers as the Fundamental Ticker.
-securities <- bdp(securities, c('EQY_FUND_TICKER', 'AVG_DAILY_VALUE_TRADED_3M')) %>% 
+securities <- bdp(securities, 'EQY_FUND_TICKER') %>% 
   rownames_to_column('Ticker') %>% 
   mutate(EQY_FUND_TICKER = paste(EQY_FUND_TICKER, 'Equity')) %>% 
   distinct(EQY_FUND_TICKER) %>% 
@@ -58,7 +92,9 @@ fields <- c(
   'TRAIL_12M_EPS_BEF_XO_ITEM', 'BOOK_VAL_PER_SH', # VALUE
   'CUR_MKT_CAP', # SIZE
   'CURRENT_TRR_1MO', 'CURRENT_TRR_1YR', # MOMENTUM
-  'EQY_BETA', 'VOLATILITY_260D' # LOW VOL
+  'EQY_BETA', 'VOLATILITY_260D', # LOW VOL
+  "RETURN_ON_COMMON_EQUITY_ADJUSTED", # Quality
+  "RETURN_ON_ASSETS_ADJUSTED"         # Quality
 )
 
 metrics <- bdp(securities, fields)
@@ -75,7 +111,7 @@ clean_metrics <- metrics %>%
   mutate(
     EARNINGS_TO_PRICE = ifelse(TRAIL_12M_EPS_BEF_XO_ITEM > 0, TRAIL_12M_EPS_BEF_XO_ITEM / PX_LAST, 0),
     BOOK_TO_MARKET = ifelse(BOOK_VAL_PER_SH > 0, BOOK_VAL_PER_SH / PX_LAST, 0),
-    MOMENTUM = CURRENT_TRR_1YR - CURRENT_TRR_1MO # Total Return 12-1 months
+    MOMENTUM = CURRENT_TRR_1YR - CURRENT_TRR_1MO, # Total Return 12-1 months
   ) %>% 
   mutate_at(
     vars(VOLATILITY_260D, EQY_BETA, CUR_MKT_CAP),
@@ -93,11 +129,12 @@ clean_metrics <- metrics %>%
   mutate(
     # Summarize multiple factor metrics into one
     LOW_VOLATILITY = mean(c(VOLATILITY_260D, EQY_BETA)),
-    VALUE = mean(c(EARNINGS_TO_PRICE, BOOK_TO_MARKET))
+    VALUE = mean(c(EARNINGS_TO_PRICE, BOOK_TO_MARKET)),
+    QUALITY = mean(c(RETURN_ON_COMMON_EQUITY_ADJUSTED, RETURN_ON_ASSETS_ADJUSTED))
   ) %>% 
   rename(SIZE = CUR_MKT_CAP) %>% 
   dplyr::select(
-    'Ticker', 'VALUE', 'SIZE', 'MOMENTUM', 'LOW_VOLATILITY'
+    'Ticker', 'VALUE', 'SIZE', 'MOMENTUM', 'LOW_VOLATILITY', "QUALITY"
   ) %>% 
   ungroup()
 ```
@@ -117,20 +154,27 @@ stars <- clean_metrics %>%
   mutate(
     ALL_FACTORS = as.numeric(get_number_of_stars(ALL_FACTORS))
   ) %>% 
-  # Star emoji
-  mutate(across(
-    !Ticker, ~strrep('\xE2\xAD\x90', .x)
-  )) %>% 
-  mutate(bdp(Ticker, 'SHORT_COMPANY_NAME'), .after = 1) %>% 
-  column_to_rownames('SHORT_COMPANY_NAME') %>% 
-  dplyr::select(!Ticker) %>% 
+  mutate(bdp(Ticker, c('SHORT_COMPANY_NAME', 'ID_ISIN')), .after = 1) %>% 
   rename(
+    NOME = SHORT_COMPANY_NAME,
     VALOR = VALUE,
     TAMANHO = SIZE,
     MOMENTO = MOMENTUM,
-    `BAIXA VOL.` = LOW_VOLATILITY,
+    `BAIXA VOL` = LOW_VOLATILITY,
+    QUALIDADE = QUALITY,
     `TODOS FATORES` = ALL_FACTORS
   )
+
+#upload_df_to_aws_s3(stars)
+
+stars <- stars %>% 
+  column_to_rownames('NOME') %>% 
+  dplyr::select(!c(Ticker, ID_ISIN)) %>% 
+  dplyr::select("TODOS FATORES", sort(colnames(.))) %>% 
+  # Star emoji
+  mutate(across(
+    everything(), ~strrep('\xE2\xAD\x90', .x)
+  )) 
 ```
 
 ```{r, echo=FALSE}
@@ -150,6 +194,8 @@ Para obter informações detalhadas sobre a metodologia utilizada neste estudo, 
 ## Modificações na Metodologia
 
 - [**Abril de 2023**] Para determinar o fator de valor, são considerados dois indicadores: "*earnings to price*" e "*book to market*". No entanto, esses indicadores são problemáticos quando o numerador é negativo. Isso ocorre porque, se o preço diminuir, o indicador se tornará mais negativo. Esse fenômeno vai em desacordo com a essência do fator valor, que considera uma queda no preço como um evento que torna o ativo mais atrativo, e não menos. Por esse motivo, truncamos o valor desses indicadores em zero.
+
+- [**Agosto de 2023**] Realizamos duas alterações fundamentais. A primeira diz respeito à introdução do fator "Qualidade". Dentro desse contexto, o fator em questão é calculado pela média dos valores ajustados de ROE e ROA de cada empresa. A segunda modificação envolve a revisão do conjunto de ativos considerados. Anteriormente, esse conjunto incluía os componentes dos índices IBrX 100 e SMLL. Agora, o grupo de ativos em consideração consiste nos membros do Índice Brasil Amplo (IBrA B3).
 
 # Contato
 
